@@ -101,7 +101,7 @@
 <div id="app">
   <header>
     <div class="logo">🫀</div>
-    <h1>MedVision AI — X-Ray Analyzer</h1>
+    <h1>MedVision — X-Ray Analyzer</h1>
     <span id="coordDisplay">x: — &nbsp; y: —</span>
   </header>
   <div class="workspace">
@@ -486,7 +486,7 @@ async function saveReportPDF(){
 
   doc.setFillColor(10,10,15);doc.rect(0,0,pageW,22,'F');
   doc.setTextColor(0,212,170);doc.setFontSize(13);doc.setFont('helvetica','bold');
-  doc.text('MedVision AI — Radiology Report',margin,14);
+  doc.text('MedVision — Radiology Report',margin,14);
   doc.setTextColor(107,107,128);doc.setFontSize(8);doc.setFont('helvetica','normal');
   doc.text(new Date().toLocaleString(),pageW-margin,14,{align:'right'});
   y=30;
