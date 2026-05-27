@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>X-Ray AI Viewer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@300;400;500;600&display=swap');
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0a0a0f; --surface: #111118; --surface2: #1a1a24;
+    --border: #2a2a3a; --accent: #00d4aa; --accent2: #7c6aff;
+    --text: #e8e8f0; --muted: #6b6b80; --danger: #ff4d6a;
+    --sidebar-w: 220px; --panel-w: 260px; --header-h: 49px;
+  }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: 'Space Grotesk', sans-serif; }
+  #app { display: flex; flex-direction: column; width: 100vw; height: 100vh; overflow: hidden; }
+  header { height: var(--header-h); min-height: var(--header-h); flex-shrink: 0; padding: 0 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; background: var(--surface); }
+  .logo { width: 28px; height: 28px; background: linear-gradient(135deg, var(--accent), var(--accent2)); border-radius: 7px; display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0; }
+  header h1 { font-size: 14px; font-weight: 500; letter-spacing: 0.02em; white-space: nowrap; }
+  header span { font-size: 11px; color: var(--muted); margin-left: auto; font-family: 'JetBrains Mono', monospace; white-space: nowrap; }
+  .workspace { display: flex; flex-direction: row; flex: 1; min-height: 0; overflow: hidden; }
+  .sidebar { width: var(--sidebar-w); min-width: var(--sidebar-w); flex-shrink: 0; background: var(--surface); border-right: 1px solid var(--border); padding: 14px 12px; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; overflow-x: hidden; }
+  .sidebar-title { font-size: 10px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); font-family: 'JetBrains Mono', monospace; }
+  .upload-zone { border: 1.5px dashed var(--border); border-radius: 10px; padding: 20px 12px; text-align: center; cursor: pointer; transition: all 0.2s; background: var(--surface2); }
+  .upload-zone:hover, .upload-zone.drag-over { border-color: var(--accent); background: rgba(0,212,170,0.05); }
+  .upload-zone .icon { font-size: 26px; margin-bottom: 8px; }
+  .upload-zone p { font-size: 11px; color: var(--muted); line-height: 1.5; }
+  .upload-zone strong { color: var(--accent); }
+  #fileInput { display: none; }
+  .btn { padding: 9px 14px; border-radius: 7px; border: none; font-family: inherit; font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.15s; width: 100%; }
+  .btn-primary { background: var(--accent); color: #000; }
+  .btn-primary:hover { background: #00f0c0; }
+  .btn-primary:disabled { background: var(--border); color: var(--muted); cursor: not-allowed; }
+  .tools-group { display: flex; flex-direction: column; gap: 5px; }
+  .tool-row { display: flex; gap: 5px; }
+  .tool-btn { flex: 1; padding: 7px 6px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface2); color: var(--text); font-size: 10px; cursor: pointer; transition: all 0.15s; font-family: inherit; text-align: center; white-space: nowrap; }
+  .tool-btn:hover { border-color: var(--accent2); color: var(--accent2); }
+  .slider-group { display: flex; flex-direction: column; gap: 9px; }
+  .slider-row { display: flex; flex-direction: column; gap: 3px; }
+  .slider-label { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); }
+  .slider-label span:last-child { color: var(--text); font-family: 'JetBrains Mono', monospace; }
+  input[type=range] { width: 100%; -webkit-appearance: none; height: 3px; background: var(--border); border-radius: 2px; outline: none; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 13px; height: 13px; border-radius: 50%; background: var(--accent); cursor: pointer; }
+  .toggle-row { display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: var(--muted); }
+  .toggle { width: 30px; height: 17px; background: var(--border); border-radius: 9px; position: relative; cursor: pointer; transition: background 0.2s; border: none; flex-shrink: 0; }
+  .toggle.on { background: var(--accent); }
+  .toggle::after { content: ''; position: absolute; width: 11px; height: 11px; background: white; border-radius: 50%; top: 3px; left: 3px; transition: left 0.2s; }
+  .toggle.on::after { left: 16px; }
+  .file-info { background: var(--surface2); border: 1px solid var(--border); border-radius: 7px; padding: 8px 10px; font-size: 11px; color: var(--muted); margin-top: 8px; }
+  .file-info strong { color: var(--text); display: block; margin-bottom: 3px; font-size: 12px; }
+  .dicom-notice { background: rgba(124,106,255,0.1); border: 1px solid rgba(124,106,255,0.3); border-radius: 7px; padding: 8px 10px; font-size: 10px; color: #a89fff; line-height: 1.5; }
+  .canvas-area { flex: 1; min-width: 0; position: relative; background: #050508; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+  #mainCanvas { position: absolute; cursor: crosshair; transform-origin: center center; image-rendering: pixelated; }
+  #overlayCanvas { position: absolute; pointer-events: none; transform-origin: center center; }
+  .canvas-hint { position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.7); border: 1px solid var(--border); padding: 5px 12px; border-radius: 20px; font-size: 10px; color: var(--muted); font-family: 'JetBrains Mono', monospace; pointer-events: none; white-space: nowrap; }
+  .zoom-badge { position: absolute; top: 14px; left: 14px; background: rgba(0,0,0,0.8); border: 1px solid var(--border); padding: 3px 9px; border-radius: 5px; font-size: 11px; font-family: 'JetBrains Mono', monospace; color: var(--accent); pointer-events: none; }
+  .empty-state { text-align: center; color: var(--muted); }
+  .empty-state .big-icon { font-size: 56px; margin-bottom: 14px; opacity: 0.3; }
+  .empty-state p { font-size: 13px; }
+  .results-panel { width: var(--panel-w); min-width: var(--panel-w); flex-shrink: 0; background: var(--surface); border-left: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+  .results-header { padding: 13px 14px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+  .results-header h3 { font-size: 12px; font-weight: 500; }
+  .badge { padding: 2px 7px; border-radius: 4px; font-size: 10px; font-family: 'JetBrains Mono', monospace; }
+  .badge-accent { background: rgba(0,212,170,0.15); color: var(--accent); }
+  .badge-muted { background: var(--surface2); color: var(--muted); }
+  .results-body { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 10px; min-height: 0; }
+  .spinner { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100px; gap: 10px; }
+  .spinner-ring { width: 28px; height: 28px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .detection-card { background: var(--surface2); border: 1px solid var(--border); border-radius: 7px; padding: 9px 11px; margin-bottom: 7px; cursor: pointer; transition: all 0.15s; }
+  .detection-card:hover { border-color: var(--accent); }
+  .detection-card.highlighted { border-color: var(--accent); background: rgba(0,212,170,0.07); }
+  .det-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
+  .det-class { font-size: 12px; font-weight: 500; }
+  .det-conf { font-size: 10px; font-family: 'JetBrains Mono', monospace; }
+  .conf-bar { height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; }
+  .conf-fill { height: 100%; border-radius: 2px; background: var(--accent); transition: width 0.3s; }
+  .det-meta { font-size: 10px; color: var(--muted); margin-top: 5px; font-family: 'JetBrains Mono', monospace; }
+  .summary-box { background: var(--surface2); border: 1px solid var(--border); border-radius: 7px; padding: 10px; margin-bottom: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .summary-stat { text-align: center; }
+  .summary-stat .val { font-size: 20px; font-weight: 600; color: var(--accent); }
+  .summary-stat .lbl { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+  .no-results { text-align: center; color: var(--muted); font-size: 12px; padding: 20px; }
+  .error-msg { background: rgba(255,77,106,0.1); border: 1px solid rgba(255,77,106,0.3); border-radius: 7px; padding: 9px 11px; font-size: 11px; color: var(--danger); margin-bottom: 7px; }
+  .llm-section { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
+  .llm-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .llm-output { background: var(--surface2); border: 1px solid var(--border); border-radius: 7px; padding: 10px; font-size: 11px; line-height: 1.7; color: var(--text); }
+  .llm-output h2 { color: var(--accent); margin: 14px 0 7px; font-size: 13px; }
+  .llm-output h3 { color: var(--accent); margin: 12px 0 5px; font-size: 12px; border-bottom: 1px solid var(--border); padding-bottom: 3px; }
+  .llm-output h4 { color: var(--accent); margin: 10px 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; }
+  .llm-output ul { padding-left: 16px; margin: 5px 0; }
+  .llm-output li { margin-bottom: 4px; }
+  .llm-output strong { color: #fff; }
+  .pdf-btn { width: auto; padding: 3px 10px; border-radius: 5px; border: 1px solid var(--border); background: var(--surface2); color: var(--accent); font-size: 10px; cursor: pointer; font-family: inherit; transition: all 0.15s; }
+  .pdf-btn:hover { border-color: var(--accent); background: rgba(0,212,170,0.08); }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="logo">🫀</div>
+    <h1>MedVision AI — X-Ray Analyzer</h1>
+    <span id="coordDisplay">x: — &nbsp; y: —</span>
+  </header>
+  <div class="workspace">
+    <!-- LEFT SIDEBAR -->
+    <div class="sidebar">
+      <div>
+        <div class="sidebar-title" style="margin-bottom:8px">Load Image</div>
+        <div class="upload-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+          <div class="icon">📂</div>
+          <p>Drop <strong>JPG / PNG / DICOM</strong> here or click to browse</p>
+        </div>
+        <input type="file" id="fileInput" accept=".jpg,.jpeg,.png,.dcm,.dicom,image/*">
+        <div id="fileInfo" class="file-info" style="display:none"></div>
+      </div>
+      <div>
+        <div class="sidebar-title" style="margin-bottom:8px">Analyze</div>
+        <button class="btn btn-primary" id="analyzeBtn" disabled onclick="runAnalysis()">Run AI Detection</button>
+      </div>
+      <div>
+        <div class="sidebar-title" style="margin-bottom:8px">Zoom & Pan</div>
+        <div class="tools-group">
+          <div class="tool-row">
+            <button class="tool-btn" onclick="changeZoom(1.25)">+ In</button>
+            <button class="tool-btn" onclick="changeZoom(0.8)">− Out</button>
+          </div>
+          <button class="tool-btn" onclick="resetView()">↺ Reset View</button>
+        </div>
+      </div>
+      <div>
+        <div class="sidebar-title" style="margin-bottom:8px">Adjustments</div>
+        <div class="slider-group">
+          <div class="slider-row">
+            <div class="slider-label"><span>Brightness</span><span id="brightVal">100%</span></div>
+            <input type="range" id="brightSlider" min="0" max="300" value="100" oninput="updateFilters()">
+          </div>
+          <div class="slider-row">
+            <div class="slider-label"><span>Contrast</span><span id="contrastVal">100%</span></div>
+            <input type="range" id="contrastSlider" min="0" max="400" value="100" oninput="updateFilters()">
+          </div>
+          <div class="slider-row">
+            <div class="slider-label"><span>Invert</span><span id="invertVal">0%</span></div>
+            <input type="range" id="invertSlider" min="0" max="100" value="0" oninput="updateFilters()">
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="sidebar-title" style="margin-bottom:8px">Overlay</div>
+        <div class="tools-group">
+          <div class="toggle-row">
+            <span>Show polygons</span>
+            <button class="toggle on" id="polyToggle" onclick="togglePolygons()"></button>
+          </div>
+          <div class="toggle-row" style="margin-top:7px">
+            <span>Show labels</span>
+            <button class="toggle on" id="labelToggle" onclick="toggleLabels()"></button>
+          </div>
+        </div>
+      </div>
+      <div class="dicom-notice">⚕ DICOM files are converted to canvas for preview. Full metadata support requires a PACS server.</div>
+    </div>
+
+    <!-- MAIN CANVAS -->
+    <div class="canvas-area" id="canvasArea">
+      <div class="empty-state" id="emptyState">
+        <div class="big-icon">🩻</div>
+        <p>Load an X-ray image to begin analysis</p>
+      </div>
+      <canvas id="mainCanvas" style="display:none"></canvas>
+      <canvas id="overlayCanvas" style="display:none"></canvas>
+      <div class="zoom-badge" id="zoomBadge" style="display:none">100%</div>
+      <div class="canvas-hint" id="canvasHint" style="display:none">Scroll to zoom · Drag to pan</div>
+    </div>
+
+    <!-- RIGHT PANEL -->
+    <div class="results-panel">
+      <div class="results-header">
+        <h3>Detection Results</h3>
+        <span class="badge badge-muted" id="statusBadge">No image</span>
+      </div>
+      <div class="results-body" id="resultsBody">
+        <div class="no-results">Load and analyze an X-ray to see results</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API_KEY     = 'op6ghK2hTwUAhTN83Ok0';
+const MIMO_KEY    = 'sk-s4mwydcwt4cd13o52nhj0lmy7xqx7gnzcrklq07nmku7nuim';
+const MIMO_URL    = 'https://api.xiaomimimo.com/v1/chat/completions';
+const MIMO_MODEL  = 'mimo-v2.5';
+const WORKFLOW_URL = 'https://corsproxy.io/?url=' + encodeURIComponent('https://serverless.roboflow.com/iiiii-srapi/workflows/detect-count-and-visualize-2');
+
+let zoom=1, panX=0, panY=0, isPanning=false, lastMouse={x:0,y:0};
+let imageLoaded=false, detections=[], showPolygons=true, showLabels=true, highlightedIdx=-1;
+
+const mainCanvas    = document.getElementById('mainCanvas');
+const overlayCanvas = document.getElementById('overlayCanvas');
+const ctx  = mainCanvas.getContext('2d');
+const octx = overlayCanvas.getContext('2d');
+const canvasArea    = document.getElementById('canvasArea');
+const COLORS = ['#00d4aa','#7c6aff','#ff4d6a','#ffb740','#00c8ff','#ff6b9d','#4dff91'];
+const getColor = i => COLORS[i % COLORS.length];
+
+// ── FILE ──────────────────────────────────────────────────────────────────
+document.getElementById('fileInput').addEventListener('change', e => { if(e.target.files[0]) loadFile(e.target.files[0]); });
+const dropZone = document.getElementById('dropZone');
+dropZone.addEventListener('dragover', e=>{e.preventDefault();dropZone.classList.add('drag-over');});
+dropZone.addEventListener('dragleave',()=>dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop',e=>{e.preventDefault();dropZone.classList.remove('drag-over');if(e.dataTransfer.files[0])loadFile(e.dataTransfer.files[0]);});
+
+function loadFile(file) {
+  const isDicom=/\.(dcm|dicom)$/i.test(file.name);
+  const info=document.getElementById('fileInfo');
+  info.style.display='block';
+  info.innerHTML=`<strong>${file.name}</strong>${(file.size/1024).toFixed(1)} KB · ${isDicom?'DICOM':'Image'}`;
+  if(isDicom){loadDicom(file);return;}
+  const r=new FileReader(); r.onload=e=>loadImageFromUrl(e.target.result); r.readAsDataURL(file);
+}
+
+function loadDicom(file) {
+  const r=new FileReader();
+  r.onload=e=>{
+    const bytes=new Uint8Array(e.target.result);
+    let jpegStart=-1;
+    for(let i=0;i<bytes.length-3;i++){if(bytes[i]===0xFF&&bytes[i+1]===0xD8&&bytes[i+2]===0xFF){jpegStart=i;break;}}
+    if(jpegStart>=0){loadImageFromUrl(URL.createObjectURL(new Blob([bytes.slice(jpegStart)],{type:'image/jpeg'})));}
+    else{document.getElementById('resultsBody').innerHTML='<div class="error-msg">Could not parse DICOM. Please convert to JPEG/PNG.</div>';}
+  };
+  r.readAsArrayBuffer(file);
+}
+
+function loadImageFromUrl(src) {
+  const img=new Image();
+  img.onload=()=>{
+    const area=canvasArea.getBoundingClientRect();
+    const scale=Math.min((area.width-40)/img.width,(area.height-40)/img.height,1);
+    const w=Math.round(img.width*scale), h=Math.round(img.height*scale);
+    mainCanvas.width=img.width; mainCanvas.height=img.height;
+    overlayCanvas.width=img.width; overlayCanvas.height=img.height;
+    ctx.drawImage(img,0,0);
+    mainCanvas.style.width=w+'px'; mainCanvas.style.height=h+'px';
+    overlayCanvas.style.width=w+'px'; overlayCanvas.style.height=h+'px';
+    mainCanvas.style.left=((area.width-w)/2)+'px'; mainCanvas.style.top=((area.height-h)/2)+'px';
+    overlayCanvas.style.left=mainCanvas.style.left; overlayCanvas.style.top=mainCanvas.style.top;
+    mainCanvas.style.display='block'; overlayCanvas.style.display='block';
+    document.getElementById('emptyState').style.display='none';
+    document.getElementById('zoomBadge').style.display='block';
+    document.getElementById('canvasHint').style.display='block';
+    zoom=1;panX=0;panY=0;updateTransform();
+    imageLoaded=true;detections=[];drawOverlay();
+    document.getElementById('analyzeBtn').disabled=false;
+    document.getElementById('statusBadge').textContent='Ready';
+    document.getElementById('statusBadge').className='badge badge-accent';
+    document.getElementById('resultsBody').innerHTML='<div class="no-results">Click "Run AI Detection" to analyze</div>';
+    mainCanvas._src=src;
+  };
+  img.src=src;
+}
+
+// ── ZOOM/PAN ──────────────────────────────────────────────────────────────
+canvasArea.addEventListener('wheel',e=>{e.preventDefault();zoom=Math.min(Math.max(zoom*(e.deltaY<0?1.1:0.9),0.2),10);updateTransform();},{passive:false});
+canvasArea.addEventListener('mousedown',e=>{if(e.button===0){isPanning=true;lastMouse={x:e.clientX,y:e.clientY};}});
+window.addEventListener('mouseup',()=>isPanning=false);
+window.addEventListener('mousemove',e=>{
+  if(isPanning){panX+=e.clientX-lastMouse.x;panY+=e.clientY-lastMouse.y;lastMouse={x:e.clientX,y:e.clientY};updateTransform();}
+  const rect=mainCanvas.getBoundingClientRect();
+  const mx=Math.round((e.clientX-rect.left)/zoom*(mainCanvas.width/parseInt(mainCanvas.style.width)));
+  const my=Math.round((e.clientY-rect.top)/zoom*(mainCanvas.height/parseInt(mainCanvas.style.height)));
+  if(imageLoaded)document.getElementById('coordDisplay').textContent=`x: ${mx}  y: ${my}`;
+});
+function updateTransform(){const t=`translate(${panX}px,${panY}px) scale(${zoom})`;mainCanvas.style.transform=t;overlayCanvas.style.transform=t;document.getElementById('zoomBadge').textContent=Math.round(zoom*100)+'%';}
+function changeZoom(f){zoom=Math.min(Math.max(zoom*f,0.2),10);updateTransform();}
+function resetView(){zoom=1;panX=0;panY=0;updateTransform();}
+
+// ── FILTERS ───────────────────────────────────────────────────────────────
+function updateFilters(){
+  const b=document.getElementById('brightSlider').value;
+  const c=document.getElementById('contrastSlider').value;
+  const inv=document.getElementById('invertSlider').value;
+  document.getElementById('brightVal').textContent=b+'%';
+  document.getElementById('contrastVal').textContent=c+'%';
+  document.getElementById('invertVal').textContent=inv+'%';
+  mainCanvas.style.filter=`brightness(${b}%) contrast(${c}%) invert(${inv}%)`;
+}
+
+// ── ANALYSIS ──────────────────────────────────────────────────────────────
+async function runAnalysis(){
+  if(!imageLoaded)return;
+  const btn=document.getElementById('analyzeBtn');
+  btn.disabled=true;btn.textContent='Analyzing…';
+  document.getElementById('statusBadge').textContent='Running';
+  document.getElementById('resultsBody').innerHTML='<div class="spinner"><div class="spinner-ring"></div><p style="font-size:11px;color:var(--muted)">Sending to AI model…</p></div>';
+  try{
+    const src=mainCanvas._src;
+    let base64=src.startsWith('data:')?src.split(',')[1]:await blobToBase64(await(await fetch(src)).blob());
+    const response=await fetch(WORKFLOW_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({api_key:API_KEY,inputs:{image:{type:'base64',value:base64}}})});
+    const data=await response.json();
+    if(data.error_type)throw new Error(data.message);
+    const output=data.outputs?.[0];
+    const count=output?.count_objects??0;
+    const preds=output?.predictions?.predictions??[];
+    detections=preds;drawOverlay();renderResults(count,preds);
+    if(preds.length>0)runLLMAnalysis(base64,preds);
+    document.getElementById('statusBadge').textContent=count+' found';
+    document.getElementById('statusBadge').className='badge badge-accent';
+  }catch(err){
+    document.getElementById('resultsBody').innerHTML=`<div class="error-msg">Error: ${err.message}</div>`;
+    document.getElementById('statusBadge').textContent='Error';
+  }
+  btn.disabled=false;btn.textContent='Run AI Detection';
+}
+
+function blobToBase64(blob){return new Promise(res=>{const r=new FileReader();r.onload=()=>res(r.result.split(',')[1]);r.readAsDataURL(blob);});}
+
+function renderResults(count,preds){
+  const body=document.getElementById('resultsBody');
+  if(!preds.length){body.innerHTML='<div class="no-results">No detections found</div>';return;}
+  const avgConf=preds.reduce((s,p)=>s+(p.confidence||0),0)/preds.length;
+  let html=`<div class="summary-box">
+    <div class="summary-stat"><div class="val">${count}</div><div class="lbl">Detections</div></div>
+    <div class="summary-stat"><div class="val">${(avgConf*100).toFixed(0)}%</div><div class="lbl">Avg Conf</div></div>
+  </div>`;
+  preds.forEach((p,i)=>{
+    const conf=((p.confidence||0)*100).toFixed(1),color=getColor(i);
+    html+=`<div class="detection-card" id="det-${i}" onclick="highlightDetection(${i})">
+      <div class="det-header"><span class="det-class" style="color:${color}">Region ${i+1}</span><span class="det-conf" style="color:${color}">${conf}%</span></div>
+      <div class="conf-bar"><div class="conf-fill" style="width:${conf}%;background:${color}"></div></div>
+      <div class="det-meta" id="det-label-${i}">🤖 Agent analyzing…</div>
+    </div>`;
+  });
+  body.innerHTML=html;
+}
+
+function highlightDetection(idx){
+  highlightedIdx=highlightedIdx===idx?-1:idx;
+  document.querySelectorAll('.detection-card').forEach((el,i)=>el.classList.toggle('highlighted',i===highlightedIdx));
+  drawOverlay();
+}
+
+// ── OVERLAY ───────────────────────────────────────────────────────────────
+function drawOverlay(){
+  octx.clearRect(0,0,overlayCanvas.width,overlayCanvas.height);
+  if(!showPolygons||!detections.length)return;
+  detections.forEach((det,i)=>{
+    const pts=det.points;if(!pts||pts.length<2)return;
+    const color=getColor(i),hi=i===highlightedIdx;
+    octx.beginPath();octx.moveTo(pts[0].x,pts[0].y);
+    pts.forEach(p=>octx.lineTo(p.x,p.y));octx.closePath();
+    octx.fillStyle=hi?color+'33':color+'18';octx.fill();
+    octx.strokeStyle=color;octx.lineWidth=hi?2.5:1.5;
+    octx.setLineDash(hi?[]:[4,2]);octx.stroke();octx.setLineDash([]);
+    // Only draw label if LLM has assigned one
+    if(showLabels&&det.llmLabel){
+      const cx=pts.reduce((s,p)=>s+p.x,0)/pts.length;
+      const cy=pts.reduce((s,p)=>s+p.y,0)/pts.length;
+      const label=det.llmLabel;
+      octx.font='bold 11px JetBrains Mono,monospace';
+      const tw=octx.measureText(label).width;
+      octx.fillStyle='rgba(0,0,0,0.8)';octx.fillRect(cx-tw/2-5,cy-15,tw+10,20);
+      octx.fillStyle=color;octx.fillText(label,cx-tw/2,cy);
+    }
+  });
+}
+function togglePolygons(){showPolygons=!showPolygons;document.getElementById('polyToggle').classList.toggle('on',showPolygons);drawOverlay();}
+function toggleLabels(){showLabels=!showLabels;document.getElementById('labelToggle').classList.toggle('on',showLabels);drawOverlay();}
+
+// ── LLM ───────────────────────────────────────────────────────────────────
+async function runLLMAnalysis(base64,preds){
+  const resultsBody=document.getElementById('resultsBody');
+
+  // Add LLM section to results panel
+  const llmDiv=document.createElement('div');
+  llmDiv.className='llm-section';
+  llmDiv.innerHTML=`
+    <div class="llm-header">
+      <div class="sidebar-title">AI Radiology Report</div>
+      <button class="pdf-btn" id="saveReportBtn" onclick="saveReportPDF()" style="display:none">⬇ PDF</button>
+    </div>
+    <div class="llm-output" id="llm-output">
+      <div class="spinner"><div class="spinner-ring"></div><p style="font-size:11px;color:var(--muted)">Generating report…</p></div>
+    </div>`;
+  resultsBody.appendChild(llmDiv);
+
+  const detSummary=preds.map((p,i)=>`Region ${i+1}: class="${p.class}", confidence=${((p.confidence||0)*100).toFixed(1)}%`).join('\n');
+
+  const prompt=`You are an AI assistant analyzing a medical scan image for educational and research purposes.
+
+Automated detection found these regions:
+${detSummary}
+
+Respond with ONLY a valid JSON object, no markdown, no extra text:
+{
+  "labels": ["short label for region 1", "short label for region 2"],
+  "report": "markdown report text here"
+}
+
+Rules:
+- labels: one short label per region (max 4 words), based on what you ACTUALLY see in the image — correct wrong detection labels
+- report: markdown with two sections only:
+  **Image Overview** — describe the scan type and anatomy
+  **Key Findings** — for each region, confirm or correct the detection based on visual inspection
+  **Conclusion** — one short paragraph: final verdict on the primary diagnosis, clinical significance, and recommended next step
+- Do NOT wrap in markdown fences
+- Use \\n for newlines inside the report string`;
+
+  try{
+    const response=await fetch(MIMO_URL,{
+      method:'POST',
+      headers:{'api-key':MIMO_KEY,'Content-Type':'application/json'},
+      body:JSON.stringify({
+        model:MIMO_MODEL,max_completion_tokens:16000,temperature:0.7,top_p:0.95,
+        messages:[{role:'user',content:[
+          {type:'image_url',image_url:{url:`data:image/jpeg;base64,${base64}`}},
+          {type:'text',text:prompt}
+        ]}]
+      })
+    });
+    const data=await response.json();
+    const msg = data.choices?.[0]?.message || {};
+    const raw = (msg.content || msg.reasoning_content || '').trim();
+    console.log('Raw content:', raw);
+
+    // Robustly extract JSON
+    let parsed={};
+    try{
+      const match=raw.match(/\{[\s\S]*\}/);
+      if(match)parsed=JSON.parse(match[0]);
+    }catch(e){
+      console.warn('JSON parse failed:',e,'\nRaw:',raw);
+      // show raw so we can debug
+      document.getElementById('llm-output').innerHTML=`<div class="error-msg">Parse failed. Raw response:</div><pre style="font-size:10px;color:var(--muted);white-space:pre-wrap;margin-top:6px">${raw}</pre>`;
+      return;
+    }
+
+    // Apply LLM labels to detections + update cards
+    if(Array.isArray(parsed.labels)){
+      parsed.labels.forEach((lbl,i)=>{
+        if(detections[i]){
+          detections[i].llmLabel=lbl;
+          const el=document.getElementById(`det-label-${i}`);
+          if(el)el.textContent=lbl;
+        }
+      });
+      drawOverlay();
+    }
+
+    // Render report
+    const reportText=parsed.report||'No report generated.';
+    document.getElementById('llm-output').innerHTML=renderMarkdown(reportText);
+    const saveBtn=document.getElementById('saveReportBtn');
+    saveBtn.style.display='block';
+    saveBtn._reportText=reportText;
+
+  }catch(err){
+    document.getElementById('llm-output').innerHTML=`<div class="error-msg">LLM Error: ${err.message}</div>`;
+  }
+}
+
+// ── MARKDOWN ──────────────────────────────────────────────────────────────
+function renderMarkdown(text){
+  return text
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/^# (.+)$/gm,'<h2>$1</h2>')
+    .replace(/^## (.+)$/gm,'<h3>$1</h3>')
+    .replace(/^### (.+)$/gm,'<h4>$1</h4>')
+    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g,'<em>$1</em>')
+    .replace(/^[*-] (.+)$/gm,'<li>$1</li>')
+    .replace(/(<li>[\s\S]*?<\/li>)/g,'<ul>$1</ul>')
+    .replace(/\n{2,}/g,'<br><br>')
+    .replace(/\n/g,'<br>');
+}
+
+// ── PDF ───────────────────────────────────────────────────────────────────
+async function saveReportPDF(){
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({unit:'mm',format:'a4'});
+  const pageW=doc.internal.pageSize.getWidth(),pageH=doc.internal.pageSize.getHeight();
+  const margin=18,contentW=pageW-margin*2;
+  let y=margin;
+
+  doc.setFillColor(10,10,15);doc.rect(0,0,pageW,22,'F');
+  doc.setTextColor(0,212,170);doc.setFontSize(13);doc.setFont('helvetica','bold');
+  doc.text('MedVision AI — Radiology Report',margin,14);
+  doc.setTextColor(107,107,128);doc.setFontSize(8);doc.setFont('helvetica','normal');
+  doc.text(new Date().toLocaleString(),pageW-margin,14,{align:'right'});
+  y=30;
+
+  const src=mainCanvas._src;
+  if(src){
+    try{
+      const imgW=contentW,aspect=mainCanvas.height/mainCanvas.width;
+      const imgH=Math.min(imgW*aspect,90);
+      doc.setDrawColor(42,42,58);doc.setLineWidth(0.3);
+      doc.rect(margin,y,imgW,imgH);doc.addImage(src,'JPEG',margin,y,imgW,imgH);
+      y+=imgH+5;
+      doc.setTextColor(107,107,128);doc.setFontSize(7);
+      doc.text('Fig 1. Uploaded X-ray image',margin,y);y+=8;
+    }catch(e){console.warn('Image embed failed',e);}
+  }
+
+  doc.setDrawColor(42,42,58);doc.setLineWidth(0.3);doc.line(margin,y,pageW-margin,y);y+=6;
+
+  const raw=document.getElementById('saveReportBtn')._reportText||'';
+  const clean=raw.replace(/\*\*([^*]+)\*\*/g,'$1').replace(/\*([^*]+)\*/g,'$1')
+    .replace(/^#{1,4}\s*/gm,'').replace(/^[-*]\s+/gm,'• ').trim();
+
+  const headingRe=/^(Image Overview|Key Findings|Summary Report|Overview|Findings|Impression|Technique)/i;
+  for(const block of clean.split(/\n{2,}/)){
+    const lines=block.split('\n').map(l=>l.trim()).filter(Boolean);
+    if(!lines.length)continue;
+    if(headingRe.test(lines[0])){
+      if(y>pageH-30){doc.addPage();y=margin;}
+      doc.setTextColor(0,212,170);doc.setFontSize(10);doc.setFont('helvetica','bold');
+      doc.text(lines[0].toUpperCase(),margin,y);y+=5;
+      doc.setDrawColor(0,212,170);doc.setLineWidth(0.2);doc.line(margin,y,margin+40,y);y+=4;
+      lines.shift();
+    }
+    doc.setFontSize(9);doc.setFont('helvetica','normal');
+    for(const line of lines){
+      for(const wl of doc.splitTextToSize(line,contentW)){
+        if(y>pageH-16){doc.addPage();y=margin;}
+        doc.setTextColor(220,220,235);doc.text(wl,margin,y);y+=5;
+      }
+    }
+    y+=3;
+  }
+
+  const total=doc.internal.getNumberOfPages();
+  for(let i=1;i<=total;i++){
+    doc.setPage(i);
+    doc.setFillColor(17,17,24);doc.rect(0,pageH-10,pageW,10,'F');
+    doc.setTextColor(107,107,128);doc.setFontSize(7);
+    doc.text('For research & educational use only — not a clinical diagnosis',margin,pageH-4);
+    doc.text(`Page ${i} of ${total}`,pageW-margin,pageH-4,{align:'right'});
+  }
+  doc.save(`radiology-report-${Date.now()}.pdf`);
+}
+</script>
+</body>
+</html>
