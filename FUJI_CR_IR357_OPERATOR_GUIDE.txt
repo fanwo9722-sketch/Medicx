@@ -1,0 +1,210 @@
+================================================================================
+        MEDVISION AI — FUJIFILM CR IR 357 CONNECTION GUIDE
+        Operator Step-by-Step Instructions
+================================================================================
+
+OVERVIEW
+--------
+This guide shows you how to connect the Fujifilm CR IR 357 Computed Radiography
+scanner to the MedVision AI system so that:
+  1. The scanner picks up scheduled scans from MedVision
+  2. Scanned images are automatically sent to MedVision for AI analysis
+
+WHAT YOU NEED
+-------------
+- Fujifilm CR IR 357 scanner (powered on, connected via Ethernet cable)
+- PC running MedVision AI backend (IP: 10.168.101.188)
+- Both devices on the same network (same router/switch)
+- Access to the scanner's DICOM settings menu
+
+================================================================================
+STEP 1: FIND YOUR SCANNER'S NETWORK INFO
+================================================================================
+
+On the CR IR 357 console screen:
+
+  1. Press the [MENU] button on the scanner
+  2. Navigate to: System Settings > Network Settings > DICOM Settings
+  3. Write down the following values:
+
+     Scanner IP Address: ________________________
+     (Example: 10.168.101.50)
+
+     Scanner AE Title: ________________________
+     (Example: CR_IR357 or FCSR357)
+
+     Scanner DICOM Port: ________________________
+     (Usually 104 or 11112)
+
+  *** IMPORTANT: Write these values down — you will need them later! ***
+
+
+================================================================================
+STEP 2: CONFIGURE THE SCANNER TO CONNECT TO MEDVISION
+================================================================================
+
+Still on the CR IR 357 DICOM Settings menu:
+
+  A) ADD MEDVISION AS A STORAGE DESTINATION (where images are sent):
+
+     1. Go to: DICOM Settings > Device List > Add New Device
+     2. Enter these values:
+
+        Device Name:    MEDVISION
+        AE Title:       ORTHANC
+        IP Address:     10.168.101.188
+        Port:           4242
+
+     3. Save the settings
+
+  B) ADD THE MWL SERVER (where scheduled scans come from):
+
+     1. Go to: DICOM Settings > MWL Settings (or Worklist Settings)
+     2. Add a new MWL Server:
+
+        Server Name:    MEDVISION_MWL
+        AE Title:       MEDVISION_MWL
+        IP Address:     10.168.101.188
+        Port:           11113
+
+     3. Save the settings
+     4. Set "Query MWL on Startup" or "Auto Query" to YES (if available)
+
+
+================================================================================
+STEP 3: CONFIGURE MEDVISION TO RECOGNIZE YOUR SCANNER
+================================================================================
+
+On the PC running MedVision (IP: 10.168.101.188):
+
+  A) CONFIGURE ORTHANC:
+
+     1. Open a web browser
+     2. Go to: http://localhost:8042
+     3. Login:
+        Username: orthanc
+        Password: orthanc
+
+     4. Click on "Configuration" in the top menu
+     5. Find the section called "DicomModalities"
+     6. Add your scanner:
+
+        "DicomModalities": {
+          "fuji-cr": ["YOUR_SCANNER_AE_TITLE", "YOUR_SCANNER_IP", 104]
+        }
+
+        Example:
+        "DicomModalities": {
+          "fuji-cr": ["CR_IR357", "10.168.101.50", 104]
+        }
+
+     7. Replace YOUR_SCANNER_AE_TITLE with the AE Title from Step 1
+     8. Replace YOUR_SCANNER_IP with the IP Address from Step 1
+     9. Click "Save" and then "Restart Orthanc"
+
+  B) VERIFY MEDVISION BACKEND IS RUNNING:
+
+     1. Open Command Prompt
+     2. Run: python C:\Users\Austin\medical\server.py
+     3. Wait for: "Server ready!"
+     4. Keep this window open — do not close it!
+
+
+================================================================================
+STEP 4: TEST THE CONNECTION
+================================================================================
+
+  A) CHECK MWL SERVER IS WORKING:
+
+     1. Open a browser on the PC
+     2. Go to: http://localhost:5000/api/mwl/status
+     3. You should see:
+        {
+          "available": true,
+          "aeTitle": "MEDVISION_MWL",
+          "port": 11113,
+          "pendingEntries": 0
+        }
+
+  B) SCHEDULE A TEST SCAN:
+
+     1. Open the MedVision web app: http://localhost:5000
+     2. Schedule a test scan for any body part
+     3. Check pending worklist: http://localhost:5000/api/mwl/pending
+     4. You should see your scheduled scan in the list
+
+  C) QUERY MWL FROM THE SCANNER:
+
+     1. On the CR IR 357, go to the worklist screen
+     2. Press "Query" or "Refresh" to fetch the worklist
+     3. The scheduled scan should appear on the scanner's screen
+     4. Select it and perform the scan
+
+  D) VERIFY IMAGES WERE SENT:
+
+     1. After the scan completes, go to: http://localhost:8042
+     2. Check if a new patient/study appeared in Orthanc
+     3. If yes — SUCCESS! The connection is working
+
+
+================================================================================
+TROUBLESHOOTING
+================================================================================
+
+PROBLEM: Scanner can't find the MWL server
+  SOLUTION:
+  - Make sure the PC IP (10.168.101.188) is correct
+  - Make sure port 11113 is not blocked by Windows Firewall
+  - Open Windows Firewall and add an inbound rule for port 11113 (TCP)
+  - Also add inbound rule for port 4242 (TCP)
+
+PROBLEM: Scanner can't send images to Orthanc
+  SOLUTION:
+  - Make sure Orthanc is running (check http://localhost:8042)
+  - Make sure port 4242 is not blocked by Windows Firewall
+  - Verify the scanner's AE Title matches what you entered in Orthanc config
+
+PROBLEM: Images don't appear in MedVision after scanning
+  SOLUTION:
+  - Check Orthanc logs for errors
+  - Verify the scanner is configured to send to MEDVISION (not another destination)
+  - Some scanners require you to manually select the destination after scanning
+
+PROBLEM: Windows Firewall blocking connections
+  SOLUTION:
+  1. Open Windows Defender Firewall
+  2. Click "Advanced Settings"
+  3. Click "Inbound Rules" > "New Rule"
+  4. Select "Port" > Next
+  5. Enter: 4242,11113 > Next
+  6. Select "Allow the connection" > Next
+  7. Check all profiles (Domain, Private, Public) > Next
+  8. Name it "MedVision DICOM" > Finish
+
+
+================================================================================
+QUICK REFERENCE — PORTS AND AE TITLES
+================================================================================
+
+  SERVICE              AE TITLE           IP                PORT
+  ─────────────────────────────────────────────────────────────────
+  Orthanc PACS         ORTHANC            10.168.101.188    4242
+  MWL Server           MEDVISION_MWL      10.168.101.188    11113
+  MedVision Web App    (none)             10.168.101.188    5000
+  Fujifilm CR IR 357   [FROM STEP 1]      [FROM STEP 1]     [FROM STEP 1]
+
+
+================================================================================
+CONTACT / SUPPORT
+================================================================================
+
+If you need help, provide:
+  1. Scanner model: Fujifilm CR IR 357
+  2. Scanner IP: [from Step 1]
+  3. Scanner AE Title: [from Step 1]
+  4. PC IP: 10.168.101.188
+  5. Error message (if any)
+
+================================================================================
+END OF GUIDE
+================================================================================
