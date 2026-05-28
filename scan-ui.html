@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MedVision AI — Scan Request</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@400;500;600;700&display=swap');
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #080b10; --s1: #0d1117; --s2: #131920; --s3: #1a2230;
+    --border: #1e2d40; --border2: #2a3f55;
+    --teal: #00e5c0; --teal2: #00b398; --teal-dim: rgba(0,229,192,0.08);
+    --amber: #f0a500; --red: #ff4757; --blue: #4da6ff;
+    --text: #d8e8f0; --muted: #4a6275; --muted2: #6a8599;
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'Syne', sans-serif;
+  }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: var(--sans); }
+
+  /* ── LAYOUT ── */
+  #app { display: flex; flex-direction: column; width: 100vw; height: 100vh; }
+  header {
+    height: 48px; flex-shrink: 0;
+    background: var(--s1); border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; padding: 0 20px; gap: 14px;
+  }
+  .logo { width: 26px; height: 26px; background: var(--teal); border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 13px; flex-shrink: 0; }
+  header h1 { font-size: 13px; font-weight: 600; letter-spacing: 0.05em; color: var(--text); }
+  .header-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+  .orthanc-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); transition: background 0.3s; }
+  .orthanc-dot.on { background: var(--teal); box-shadow: 0 0 6px var(--teal); }
+  .orthanc-label { font-size: 10px; font-family: var(--mono); color: var(--muted2); }
+
+  .workspace { display: flex; flex: 1; min-height: 0; }
+
+  /* ── LEFT: PATIENT PANEL ── */
+  .patient-panel {
+    width: 240px; flex-shrink: 0;
+    background: var(--s1); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .panel-title { font-size: 9px; font-family: var(--mono); letter-spacing: 0.14em; color: var(--muted); padding: 12px 14px 8px; text-transform: uppercase; }
+  .search-box { margin: 0 10px 10px; position: relative; }
+  .search-box input {
+    width: 100%; padding: 7px 10px 7px 30px;
+    background: var(--s2); border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text); font-family: var(--sans); font-size: 11px; outline: none;
+  }
+  .search-box input:focus { border-color: var(--teal2); }
+  .search-box::before { content: '⌕'; position: absolute; left: 10px; top: 7px; font-size: 13px; color: var(--muted); pointer-events: none; }
+  .patient-list { flex: 1; overflow-y: auto; padding: 0 6px 10px; }
+  .patient-item {
+    padding: 9px 10px; border-radius: 7px; cursor: pointer;
+    transition: background 0.15s; margin-bottom: 3px;
+    border: 1px solid transparent;
+  }
+  .patient-item:hover { background: var(--s2); }
+  .patient-item.selected { background: var(--teal-dim); border-color: var(--teal2); }
+  .pt-name { font-size: 12px; font-weight: 600; color: var(--text); }
+  .pt-meta { font-size: 10px; font-family: var(--mono); color: var(--muted2); margin-top: 2px; }
+  .no-patients { text-align: center; padding: 30px 14px; font-size: 11px; color: var(--muted); line-height: 1.6; }
+
+  /* ── CENTER: BODY DIAGRAM ── */
+  .diagram-area {
+    flex: 1; min-width: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    background: var(--bg); position: relative; overflow: hidden;
+    padding: 24px;
+  }
+  .diagram-title { font-size: 11px; font-family: var(--mono); color: var(--muted); letter-spacing: 0.1em; margin-bottom: 20px; text-align: center; }
+
+  /* body SVG container */
+  #bodySvg { width: 220px; height: 440px; cursor: default; }
+  .body-region { cursor: pointer; transition: all 0.2s; }
+  .body-region:hover .region-fill { fill: rgba(0,229,192,0.25); }
+  .body-region.active .region-fill { fill: rgba(0,229,192,0.35); stroke: #00e5c0; stroke-width: 2; }
+  .body-region.active .region-label { fill: #00e5c0; font-weight: 600; }
+  .region-fill { fill: rgba(255,255,255,0.04); stroke: rgba(255,255,255,0.12); stroke-width: 1; transition: all 0.2s; }
+  .region-label { font-family: 'IBM Plex Mono', monospace; font-size: 9px; fill: #4a6275; text-anchor: middle; pointer-events: none; transition: fill 0.2s; }
+
+  /* scan labels floating left */
+  .scan-labels { position: absolute; left: 20px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 6px; }
+  .scan-label-item { font-size: 10px; font-family: var(--mono); color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .scan-label-item::before { content: ''; width: 18px; height: 1px; background: var(--border2); display: inline-block; }
+  .scan-label-item.active { color: var(--teal); }
+  .scan-label-item.active::before { background: var(--teal); }
+
+  /* modality pills */
+  .modality-row { display: flex; gap: 7px; margin-top: 20px; flex-wrap: wrap; justify-content: center; }
+  .mod-pill {
+    padding: 5px 13px; border-radius: 20px; font-size: 10px; font-family: var(--mono);
+    border: 1px solid var(--border2); color: var(--muted2); cursor: pointer;
+    transition: all 0.15s; background: var(--s2);
+  }
+  .mod-pill:hover { border-color: var(--teal2); color: var(--teal); }
+  .mod-pill.active { border-color: var(--teal); background: var(--teal-dim); color: var(--teal); }
+
+  /* ── RIGHT: REQUEST PANEL ── */
+  .request-panel {
+    width: 280px; flex-shrink: 0;
+    background: var(--s1); border-left: 1px solid var(--border);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .req-section { padding: 14px; border-bottom: 1px solid var(--border); }
+  .req-label { font-size: 9px; font-family: var(--mono); color: var(--muted); letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 10px; }
+  .selected-display {
+    background: var(--s2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 12px; font-size: 12px;
+  }
+  .sel-body-part { font-size: 18px; font-weight: 700; color: var(--teal); font-family: var(--mono); }
+  .sel-modality { font-size: 10px; color: var(--muted2); margin-top: 2px; font-family: var(--mono); }
+  .sel-patient { font-size: 11px; color: var(--text); margin-top: 6px; font-weight: 600; }
+  .sel-placeholder { font-size: 11px; color: var(--muted); }
+
+  .protocol-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .proto-btn {
+    padding: 7px 6px; border-radius: 6px; font-size: 10px; font-family: var(--mono);
+    border: 1px solid var(--border); background: var(--s2); color: var(--muted2);
+    cursor: pointer; transition: all 0.15s; text-align: center;
+  }
+  .proto-btn:hover { border-color: var(--amber); color: var(--amber); }
+  .proto-btn.active { border-color: var(--amber); background: rgba(240,165,0,0.08); color: var(--amber); }
+
+  .priority-row { display: flex; gap: 6px; }
+  .prio-btn {
+    flex: 1; padding: 7px; border-radius: 6px; font-size: 10px; font-family: var(--mono);
+    border: 1px solid var(--border); background: var(--s2); color: var(--muted2);
+    cursor: pointer; transition: all 0.15s; text-align: center;
+  }
+  .prio-btn.routine:hover, .prio-btn.routine.active { border-color: var(--teal); color: var(--teal); background: var(--teal-dim); }
+  .prio-btn.urgent:hover, .prio-btn.urgent.active { border-color: var(--amber); color: var(--amber); background: rgba(240,165,0,0.08); }
+  .prio-btn.stat:hover, .prio-btn.stat.active { border-color: var(--red); color: var(--red); background: rgba(255,71,87,0.08); }
+
+  .notes-area {
+    width: 100%; padding: 8px 10px; background: var(--s2);
+    border: 1px solid var(--border); border-radius: 7px; resize: none;
+    color: var(--text); font-family: var(--sans); font-size: 11px; outline: none; line-height: 1.5;
+  }
+  .notes-area:focus { border-color: var(--teal2); }
+
+  .req-actions { padding: 14px; margin-top: auto; }
+  .btn-send {
+    width: 100%; padding: 12px; border-radius: 8px; border: none;
+    background: var(--teal); color: #000; font-family: var(--sans); font-size: 13px;
+    font-weight: 700; cursor: pointer; transition: all 0.15s; letter-spacing: 0.04em;
+  }
+  .btn-send:hover { background: #00f5ce; }
+  .btn-send:disabled { background: var(--border); color: var(--muted); cursor: not-allowed; }
+  .btn-cancel {
+    width: 100%; padding: 8px; border-radius: 7px; border: 1px solid var(--border);
+    background: transparent; color: var(--muted2); font-family: var(--sans); font-size: 11px;
+    cursor: pointer; margin-top: 7px; transition: all 0.15s;
+  }
+  .btn-cancel:hover { border-color: var(--red); color: var(--red); }
+
+  /* ── TOAST ── */
+  .toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(60px);
+    background: var(--s3); border: 1px solid var(--border2); border-radius: 9px;
+    padding: 11px 18px; font-size: 12px; font-family: var(--mono);
+    display: flex; align-items: center; gap: 9px;
+    transition: transform 0.3s cubic-bezier(0.34,1.56,0.64,1); z-index: 99;
+    pointer-events: none;
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+  .toast.success { border-color: var(--teal); color: var(--teal); }
+  .toast.error { border-color: var(--red); color: var(--red); }
+
+  /* ── JOB LOG ── */
+  .job-log { flex: 1; overflow-y: auto; padding: 10px 14px; min-height: 0; }
+  .job-entry {
+    background: var(--s2); border: 1px solid var(--border); border-radius: 7px;
+    padding: 9px 11px; margin-bottom: 7px; font-size: 10px; font-family: var(--mono);
+  }
+  .job-id { color: var(--teal); font-weight: 500; }
+  .job-detail { color: var(--muted2); margin-top: 3px; line-height: 1.5; }
+  .job-status { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 9px; margin-top: 5px; }
+  .job-status.requested { background: rgba(240,165,0,0.15); color: var(--amber); }
+  .job-status.complete { background: rgba(0,229,192,0.12); color: var(--teal); }
+
+  /* scrollbar */
+  ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-track { background: transparent; } ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="logo">⚕</div>
+    <h1>MEDVISION AI — SCAN REQUEST</h1>
+    <div class="header-right">
+      <div class="orthanc-dot" id="mwlDot"></div>
+      <span class="orthanc-label" id="mwlLabel">MWL: CHECKING…</span>
+      <div class="orthanc-dot" id="orchDot"></div>
+      <span class="orthanc-label" id="orchLabel">ORTHANC: CHECKING…</span>
+    </div>
+  </header>
+
+  <div class="workspace">
+    <!-- LEFT: PATIENTS -->
+    <div class="patient-panel">
+      <div class="panel-title">Patients</div>
+      <div class="search-box"><input type="text" id="ptSearch" placeholder="Search patient…" oninput="filterPatients()"></div>
+      <div style="padding: 0 10px 8px;">
+        <button onclick="addNewPatient()" style="width:100%;padding:7px;border-radius:6px;border:1px solid var(--border2);background:var(--s2);color:var(--teal);font-family:var(--mono);font-size:10px;cursor:pointer;transition:all 0.15s;">+ REGISTER PATIENT</button>
+      </div>
+      <div class="patient-list" id="patientList">
+        <div class="no-patients">No patients registered yet.<br>Click button above to add.</div>
+      </div>
+    </div>
+
+    <!-- CENTER: BODY DIAGRAM -->
+    <div class="diagram-area">
+      <div class="diagram-title">SELECT BODY REGION</div>
+
+      <svg id="bodySvg" viewBox="0 0 220 440" xmlns="http://www.w3.org/2000/svg">
+        <!-- SKULL -->
+        <g class="body-region" data-region="SKULL" onclick="selectRegion('SKULL')">
+          <ellipse class="region-fill" cx="110" cy="38" rx="32" ry="36"/>
+          <text class="region-label" x="110" y="41">SKULL</text>
+        </g>
+        <!-- NECK/CERVICAL -->
+        <g class="body-region" data-region="CERVICAL SPINE" onclick="selectRegion('CERVICAL SPINE')">
+          <rect class="region-fill" x="98" y="75" width="24" height="22" rx="5"/>
+          <text class="region-label" x="110" y="90">C-SPINE</text>
+        </g>
+        <!-- SHOULDER LEFT -->
+        <g class="body-region" data-region="LEFT SHOULDER" onclick="selectRegion('LEFT SHOULDER')">
+          <ellipse class="region-fill" cx="60" cy="107" rx="22" ry="16"/>
+          <text class="region-label" x="60" y="110">L-SHLD</text>
+        </g>
+        <!-- SHOULDER RIGHT -->
+        <g class="body-region" data-region="RIGHT SHOULDER" onclick="selectRegion('RIGHT SHOULDER')">
+          <ellipse class="region-fill" cx="160" cy="107" rx="22" ry="16"/>
+          <text class="region-label" x="160" y="110">R-SHLD</text>
+        </g>
+        <!-- CHEST -->
+        <g class="body-region" data-region="CHEST" onclick="selectRegion('CHEST')">
+          <rect class="region-fill" x="74" y="98" width="72" height="58" rx="8"/>
+          <text class="region-label" x="110" y="131">CHEST</text>
+        </g>
+        <!-- LEFT UPPER ARM -->
+        <g class="body-region" data-region="LEFT HUMERUS" onclick="selectRegion('LEFT HUMERUS')">
+          <rect class="region-fill" x="44" y="124" width="18" height="46" rx="7"/>
+          <text class="region-label" x="53" y="152">L-ARM</text>
+        </g>
+        <!-- RIGHT UPPER ARM -->
+        <g class="body-region" data-region="RIGHT HUMERUS" onclick="selectRegion('RIGHT HUMERUS')">
+          <rect class="region-fill" x="158" y="124" width="18" height="46" rx="7"/>
+          <text class="region-label" x="167" y="152">R-ARM</text>
+        </g>
+        <!-- ABDOMEN -->
+        <g class="body-region" data-region="ABDOMEN" onclick="selectRegion('ABDOMEN')">
+          <rect class="region-fill" x="78" y="157" width="64" height="50" rx="7"/>
+          <text class="region-label" x="110" y="185">ABDOMEN</text>
+        </g>
+        <!-- LUMBAR SPINE -->
+        <g class="body-region" data-region="LUMBAR SPINE" onclick="selectRegion('LUMBAR SPINE')">
+          <rect class="region-fill" x="99" y="208" width="22" height="36" rx="5"/>
+          <text class="region-label" x="110" y="230">L-SPINE</text>
+        </g>
+        <!-- LEFT HIP -->
+        <g class="body-region" data-region="LEFT HIP" onclick="selectRegion('LEFT HIP')">
+          <ellipse class="region-fill" cx="80" cy="257" rx="22" ry="20"/>
+          <text class="region-label" x="80" y="260">L-HIP</text>
+        </g>
+        <!-- RIGHT HIP -->
+        <g class="body-region" data-region="RIGHT HIP" onclick="selectRegion('RIGHT HIP')">
+          <ellipse class="region-fill" cx="140" cy="257" rx="22" ry="20"/>
+          <text class="region-label" x="140" y="260">R-HIP</text>
+        </g>
+        <!-- PELVIS -->
+        <g class="body-region" data-region="PELVIS" onclick="selectRegion('PELVIS')">
+          <rect class="region-fill" x="87" y="244" width="46" height="28" rx="6"/>
+          <text class="region-label" x="110" y="262">PELVIS</text>
+        </g>
+        <!-- LEFT FEMUR -->
+        <g class="body-region" data-region="LEFT FEMUR" onclick="selectRegion('LEFT FEMUR')">
+          <rect class="region-fill" x="68" y="278" width="20" height="58" rx="7"/>
+          <text class="region-label" x="78" y="311">L-FEM</text>
+        </g>
+        <!-- RIGHT FEMUR -->
+        <g class="body-region" data-region="RIGHT FEMUR" onclick="selectRegion('RIGHT FEMUR')">
+          <rect class="region-fill" x="132" y="278" width="20" height="58" rx="7"/>
+          <text class="region-label" x="142" y="311">R-FEM</text>
+        </g>
+        <!-- LEFT KNEE -->
+        <g class="body-region" data-region="LEFT KNEE" onclick="selectRegion('LEFT KNEE')">
+          <ellipse class="region-fill" cx="78" cy="344" rx="17" ry="14"/>
+          <text class="region-label" x="78" y="347">L-KNEE</text>
+        </g>
+        <!-- RIGHT KNEE -->
+        <g class="body-region" data-region="RIGHT KNEE" onclick="selectRegion('RIGHT KNEE')">
+          <ellipse class="region-fill" cx="142" cy="344" rx="17" ry="14"/>
+          <text class="region-label" x="142" y="347">R-KNEE</text>
+        </g>
+        <!-- LEFT TIBIA -->
+        <g class="body-region" data-region="LEFT TIBIA" onclick="selectRegion('LEFT TIBIA')">
+          <rect class="region-fill" x="68" y="358" width="20" height="52" rx="7"/>
+          <text class="region-label" x="78" y="388">L-TIB</text>
+        </g>
+        <!-- RIGHT TIBIA -->
+        <g class="body-region" data-region="RIGHT TIBIA" onclick="selectRegion('RIGHT TIBIA')">
+          <rect class="region-fill" x="132" y="358" width="20" height="52" rx="7"/>
+          <text class="region-label" x="142" y="388">R-TIB</text>
+        </g>
+        <!-- LEFT FOOT -->
+        <g class="body-region" data-region="LEFT FOOT" onclick="selectRegion('LEFT FOOT')">
+          <ellipse class="region-fill" cx="73" cy="422" rx="20" ry="12"/>
+          <text class="region-label" x="73" y="425">L-FOOT</text>
+        </g>
+        <!-- RIGHT FOOT -->
+        <g class="body-region" data-region="RIGHT FOOT" onclick="selectRegion('RIGHT FOOT')">
+          <ellipse class="region-fill" cx="147" cy="422" rx="20" ry="12"/>
+          <text class="region-label" x="147" y="425">R-FOOT</text>
+        </g>
+      </svg>
+
+      <!-- MODALITY PILLS -->
+      <div class="modality-row">
+        <div class="mod-pill active" data-mod="CT" onclick="selectModality('CT')">CT</div>
+        <div class="mod-pill" data-mod="MRI" onclick="selectModality('MRI')">MRI</div>
+        <div class="mod-pill" data-mod="X-RAY" onclick="selectModality('X-RAY')">X-RAY</div>
+        <div class="mod-pill" data-mod="US" onclick="selectModality('US')">ULTRASOUND</div>
+        <div class="mod-pill" data-mod="PET" onclick="selectModality('PET')">PET</div>
+      </div>
+    </div>
+
+    <!-- RIGHT: REQUEST PANEL -->
+    <div class="request-panel">
+      <div class="req-section">
+        <div class="req-label">Selected Scan</div>
+        <div class="selected-display" id="selDisplay">
+          <div class="sel-placeholder">Click a body region to begin</div>
+        </div>
+      </div>
+
+      <div class="req-section">
+        <div class="req-label">Protocol</div>
+        <div class="protocol-grid">
+          <div class="proto-btn active" data-proto="ROUTINE" onclick="selectProtocol('ROUTINE')">ROUTINE</div>
+          <div class="proto-btn" data-proto="WITH CONTRAST" onclick="selectProtocol('WITH CONTRAST')">W/ CONTRAST</div>
+          <div class="proto-btn" data-proto="WITHOUT CONTRAST" onclick="selectProtocol('WITHOUT CONTRAST')">W/O CONTRAST</div>
+          <div class="proto-btn" data-proto="HIGH RES" onclick="selectProtocol('HIGH RES')">HIGH RES</div>
+        </div>
+      </div>
+
+      <div class="req-section">
+        <div class="req-label">Priority</div>
+        <div class="priority-row">
+          <div class="prio-btn routine active" data-prio="ROUTINE" onclick="selectPriority('ROUTINE')">ROUTINE</div>
+          <div class="prio-btn urgent" data-prio="URGENT" onclick="selectPriority('URGENT')">URGENT</div>
+          <div class="prio-btn stat" data-prio="STAT" onclick="selectPriority('STAT')">STAT</div>
+        </div>
+      </div>
+
+      <div class="req-section">
+        <div class="req-label">Clinical Notes</div>
+        <textarea class="notes-area" id="clinicalNotes" rows="3" placeholder="e.g. suspected fracture, rule out mass…"></textarea>
+      </div>
+
+      <div class="req-label" style="padding: 12px 14px 4px; font-size:9px; font-family:var(--mono); color:var(--muted); letter-spacing:0.12em; text-transform:uppercase;">Recent Jobs</div>
+      <div class="job-log" id="jobLog">
+        <div style="font-size:10px;color:var(--muted);padding:8px;font-family:var(--mono)">No jobs yet</div>
+      </div>
+
+      <div class="req-actions">
+        <button class="btn-send" id="sendBtn" disabled onclick="sendScanRequest()">SEND SCAN REQUEST</button>
+        <button class="btn-cancel" onclick="clearSelection()">CLEAR</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = 'http://localhost:5000';
+let selectedRegion = null, selectedModality = 'CT', selectedProtocol = 'ROUTINE', selectedPriority = 'ROUTINE';
+let selectedPatient = null, patients = [], jobs = [];
+
+// ── ORTHANC STATUS ────────────────────────────────────────────────────────
+async function checkOrthanc() {
+  try {
+    const r = await fetch(`${API}/api/orthanc/status`);
+    const d = await r.json();
+    if (d.connected) {
+      document.getElementById('orchDot').classList.add('on');
+      document.getElementById('orchLabel').textContent = `ORTHANC v${d.version} ✓`;
+      loadPatients();
+    } else {
+      document.getElementById('orchLabel').textContent = 'ORTHANC: OFFLINE';
+      loadDemoPatients();
+    }
+  } catch {
+    document.getElementById('orchLabel').textContent = 'ORTHANC: OFFLINE';
+    loadDemoPatients();
+  }
+  // Also check MWL server status
+  checkMWL();
+}
+
+// ── MWL STATUS ────────────────────────────────────────────────────────────
+async function checkMWL() {
+  try {
+    const r = await fetch(`${API}/api/mwl/status`);
+    const d = await r.json();
+    if (d.available) {
+      document.getElementById('mwlDot').classList.add('on');
+      document.getElementById('mwlLabel').textContent = `MWL: ${d.aeTitle} :${d.port} ✓ (${d.pendingEntries} pending)`;
+    } else {
+      document.getElementById('mwlLabel').textContent = 'MWL: UNAVAILABLE';
+    }
+  } catch {
+    document.getElementById('mwlLabel').textContent = 'MWL: OFFLINE';
+  }
+}
+
+// ── PATIENTS ──────────────────────────────────────────────────────────────
+async function loadPatients() {
+  // Always load from local database first (more reliable)
+  try {
+    const r = await fetch(`${API}/api/patients`);
+    if (r.ok) {
+      patients = await r.json();
+      renderPatients(patients);
+      return;
+    }
+  } catch {}
+  // Fall back to Orthanc if local fails
+  try {
+    const r = await fetch(`${API}/api/orthanc/patients`);
+    if (r.ok) {
+      patients = await r.json();
+      renderPatients(patients);
+      return;
+    }
+  } catch {}
+  patients = [];
+  renderPatients(patients);
+}
+
+async function addNewPatient() {
+  const name = prompt('Enter patient full name:');
+  if (!name || !name.trim()) return;
+  const dob = prompt('Date of birth (YYYY-MM-DD):');
+  const sex = prompt('Sex (M/F):');
+
+  try {
+    const r = await fetch(`${API}/api/patients`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name.trim(), birthDate: dob || '', sex: sex || '' })
+    });
+    const d = await r.json();
+    if (d.success) {
+      showToast(`✓ Patient ${name} registered`, 'success');
+      loadPatients();
+    } else {
+      showToast(`Error: ${d.error}`, 'error');
+    }
+  } catch (e) {
+    showToast('Error registering patient', 'error');
+  }
+}
+
+function renderPatients(list) {
+  const el = document.getElementById('patientList');
+  if (!list.length) { el.innerHTML = '<div class="no-patients">No patients found</div>'; return; }
+  el.innerHTML = list.map(p => {
+    const name = (p.name || 'Unknown').replace(/\^/g,' ');
+    const age  = p.birthDate ? calcAge(p.birthDate) : '?';
+    return `<div class="patient-item" data-id="${p.id}" onclick="selectPatient('${p.id}')">
+      <div class="pt-name">${name}</div>
+      <div class="pt-meta">ID: ${p.patientId || p.id.slice(0,8)} · ${p.sex||'?'} · ${age}y</div>
+    </div>`;
+  }).join('');
+}
+
+function calcAge(dateStr) {
+  const y = parseInt(dateStr.slice(0,4));
+  return isNaN(y) ? '?' : new Date().getFullYear() - y;
+}
+
+function filterPatients() {
+  const q = document.getElementById('ptSearch').value.toLowerCase();
+  renderPatients(patients.filter(p => (p.name||'').toLowerCase().includes(q) || (p.patientId||'').includes(q)));
+}
+
+function selectPatient(id) {
+  selectedPatient = patients.find(p => p.id === id);
+  document.querySelectorAll('.patient-item').forEach(el => el.classList.toggle('selected', el.dataset.id === id));
+  updateDisplay();
+}
+
+// ── REGION SELECTION ──────────────────────────────────────────────────────
+function selectRegion(region) {
+  selectedRegion = region;
+  document.querySelectorAll('.body-region').forEach(el => el.classList.toggle('active', el.dataset.region === region));
+  updateDisplay();
+  checkSendBtn();
+}
+
+function selectModality(mod) {
+  selectedModality = mod;
+  document.querySelectorAll('.mod-pill').forEach(el => el.classList.toggle('active', el.dataset.mod === mod));
+  updateDisplay();
+}
+
+function selectProtocol(proto) {
+  selectedProtocol = proto;
+  document.querySelectorAll('.proto-btn').forEach(el => el.classList.toggle('active', el.dataset.proto === proto));
+}
+
+function selectPriority(prio) {
+  selectedPriority = prio;
+  document.querySelectorAll('.prio-btn').forEach(el => el.classList.toggle('active', el.dataset.prio === prio));
+}
+
+function clearSelection() {
+  selectedRegion = null;
+  document.querySelectorAll('.body-region').forEach(el => el.classList.remove('active'));
+  updateDisplay();
+  checkSendBtn();
+}
+
+function updateDisplay() {
+  const el = document.getElementById('selDisplay');
+  if (!selectedRegion) {
+    el.innerHTML = '<div class="sel-placeholder">Click a body region to begin</div>';
+    return;
+  }
+  const ptName = selectedPatient ? (selectedPatient.name||'').replace(/\^/g,' ') : 'No patient selected';
+  el.innerHTML = `
+    <div class="sel-body-part">${selectedRegion}</div>
+    <div class="sel-modality">${selectedModality} · ${selectedProtocol}</div>
+    <div class="sel-patient">${ptName}</div>`;
+}
+
+function checkSendBtn() {
+  document.getElementById('sendBtn').disabled = !selectedRegion;
+}
+
+// ── SEND REQUEST ──────────────────────────────────────────────────────────
+async function sendScanRequest() {
+  if (!selectedRegion) return;
+  const btn = document.getElementById('sendBtn');
+  btn.disabled = true;
+  btn.textContent = 'SENDING…';
+
+  const payload = {
+    bodyPart:  selectedRegion,
+    modality:  selectedModality,
+    protocol:  selectedProtocol,
+    priority:  selectedPriority,
+    notes:     document.getElementById('clinicalNotes').value,
+    patient:   selectedPatient || { name: 'UNIDENTIFIED' },
+  };
+
+  try {
+    const r = await fetch(`${API}/api/orthanc/request-scan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const d = await r.json();
+    if (d.success) {
+      addJob(d, payload);
+      showToast(`✓ ${d.message} (ACC: ${d.accessionNumber})`, 'success');
+      checkMWL(); // Refresh MWL status after new entry
+    } else {
+      showToast(`Error: ${d.error||'Unknown'}`, 'error');
+    }
+  } catch (e) {
+    // offline demo mode
+    const fakeJob = { accessionNumber: `ACC-DEMO-${Date.now()}`, jobId: `JOB-${Date.now()}`, message: `${selectedModality} scan of ${selectedRegion} requested`, estimatedWait: '2-5 minutes' };
+    addJob(fakeJob, payload);
+    showToast(`✓ ${fakeJob.message} (demo)`, 'success');
+  }
+
+  btn.disabled = false;
+  btn.textContent = 'SEND SCAN REQUEST';
+}
+
+function addJob(result, payload) {
+  jobs.unshift({ ...result, payload, time: new Date().toLocaleTimeString() });
+  renderJobs();
+}
+
+function renderJobs() {
+  const el = document.getElementById('jobLog');
+  if (!jobs.length) { el.innerHTML = '<div style="font-size:10px;color:var(--muted);padding:8px;font-family:var(--mono)">No jobs yet</div>'; return; }
+  el.innerHTML = jobs.slice(0,8).map(j => `
+    <div class="job-entry">
+      <div class="job-id">${j.accessionNumber || j.jobId || 'N/A'}</div>
+      <div class="job-detail">${j.payload.bodyPart} · ${j.payload.modality} · ${j.payload.protocol || 'ROUTINE'}<br>${j.time} · ${j.payload.priority || 'ROUTINE'}</div>
+      <span class="job-status requested">SCHEDULED</span>
+    </div>`).join('');
+}
+
+// ── TOAST ─────────────────────────────────────────────────────────────────
+function showToast(msg, type='success') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = `toast ${type} show`;
+  setTimeout(() => t.classList.remove('show'), 3500);
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────
+checkOrthanc();
+setInterval(checkOrthanc, 30000);
+</script>
+</body>
+</html>
